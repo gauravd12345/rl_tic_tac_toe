@@ -1,8 +1,8 @@
 import random
 
-WIN = 1
-LOSS = -1
-DRAW = 0
+WIN = 10
+LOSS = -10
+DRAW = 1
 
 """ environment variables during initialization """
 reward_set = {WIN, LOSS, DRAW}
@@ -12,48 +12,94 @@ state_set = {tuple([" "] * 9)}
 class Agent:
     def __init__(self, state, environment):
         self.env = environment
-        self.value = {}
+        self.state_action_values = {}
+        self.state_action_count = {}
         self.policy = {}
         self.state = state
 
         self.epsilon = 0.1
+        self.discounting_term = 1.0
 
     def run_mc_control(self, state):
-        returns = self.first_visit_mc(state)
+        for _ in range(1000):
+            state_action_pairs, returns = self.first_visit_mc(state)
 
+            for (s, a), rt in zip(state_action_pairs, returns):   
+                if (s, a) not in self.state_action_values:
+                    self.state_action_values[(s, a)] = 0
+                    self.state_action_count[(s, a)] = 0
+                
+
+                self.state_action_count[(s, a)] += 1
+                self.state_action_values[(s, a)] = self.state_action_values[(s, a)] + (rt - self.state_action_values[(s, a)]) / self.state_action_count[(s, a)]
+
+
+        sorted_keys = sorted(
+            self.state_action_values, 
+            key=lambda pair: self.state_action_count[pair], 
+            reverse=True
+        )
+
+        i = 0
+        for (s, a) in sorted_keys:
+            if i == 20:
+                break
+            print(f"State_Action: ({s.state}, {a}) | Value: {self.state_action_values[(s, a)]} | Count: {self.state_action_count[(s, a)]}")
+            i += 1
 
     def first_visit_mc(self, state):
-        returns = {state: 0}
-        
-        for i in range(3):
+        state_action_pairs, returns = [], []
+        total_reward = 0
+        while self.env.reward(state) == 0:
             # get available actions & states
             actions = self.env.get_action_set(state)
             
-            # add state to policy if it doesn't exist
-            if state not in self.policy:
-                self.policy[state] = random.choice(tuple(actions))
-            
-            # take the action and transition to next state
-            action = self.policy[state]
-            
-            next_state = State()
-            next_state.state = state.state.copy()
-            next_state.state[action] = "X"
+            if len(actions) != 0:
+                # add state to policy if it doesn't exist
+                # if state not in self.policy:
+                #     self.policy[state] = random.choice(tuple(actions))
+                
+                # take the action and transition to next state
+                action = random.choice(tuple(actions))
+
+                next_state = State()
+                next_state.state = state.state.copy()
+                next_state.state[action] = "X"
 
             # compute the reward
             reward = self.env.reward(next_state)
-            print(reward)
+            total_reward += reward
+            if (state, action) not in state_action_pairs:
+                # print(state.state, action, '\n')
+                state_action_pairs.append((state, action))
+                returns.append(reward)
             
-            if state not in returns:
-                returns[state] = reward
+            if reward != 0:
+                state = next_state
+                break
+
+            # opponent policy: random
+            # randomly choose an action for the opponent to take
+            op_actions = self.env.get_action_set(next_state)
+            if op_actions:
+                op_action = random.choice(tuple(op_actions))
+                next_state.state[op_action] = "O"
 
             state = next_state
-            print(state == next_state)
-            state.show()
+            reward = self.env.reward(next_state)
+            total_reward += reward
 
-        return returns
+            if reward == -10:
+                returns[-1] = LOSS
 
-    def epsilon_greedy_policy(self):
+        # state.show()
+        for i in range(len(returns) - 1):
+            returns[i] = total_reward - returns[i]
+
+        return state_action_pairs, returns
+
+    def epsilon_greedy_policy(self, action_value):
+        # for each state, what action led to the maximial value?
         pass
 
 class Environment:
@@ -61,7 +107,7 @@ class Environment:
         actions = set()
         for i in range(3):
             for j in range(3):
-                if state.state[i * 3 + j] == " ":
+                if state.state[i * 3 + j] == ' ':
                     actions.add(i * 3 + j)
 
         return actions
@@ -84,14 +130,18 @@ class Environment:
             (0, 4, 8), (2, 4, 6)              # diagonals
         ]
 
+
         for a, b, c in winning_positions:
             if state.state[a] == state.state[b] == state.state[c] and state.state[a] != " ":
-                if state[a] == "X":
+                if state.state[a] == "X":
                     return WIN
                 else:
                     return LOSS
-
-        return DRAW
+                
+        if " " not in state.state:
+            return DRAW
+    
+        return 0
 
 
 class State(Environment):
@@ -114,7 +164,6 @@ def main():
     state = State()
     agent = Agent(state, env)
 
-    print(env.get_action_set(state))
     agent.run_mc_control(state)
 
 if __name__ == "__main__":
