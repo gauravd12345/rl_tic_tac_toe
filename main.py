@@ -1,29 +1,29 @@
 import random
+import numpy as np
 
 WIN = 10
 LOSS = -10
 DRAW = 1
 
-""" environment variables during initialization """
-reward_set = {WIN, LOSS, DRAW}
-action_set = {0, 1, 2, 3, 4, 5, 6, 7, 8}
-state_set = {tuple([" "] * 9)}
+ACTIONS = {0, 1, 2, 3, 4, 5, 6, 7, 8}
 
 class Agent:
     def __init__(self, state, environment):
+        self.state = state
         self.env = environment
+
+        self.policy = {}
         self.state_action_values = {}
         self.state_action_count = {}
-        self.policy = {}
-        self.state = state
-
+        
         self.epsilon = 0.1
         self.discounting_term = 1.0
 
-    def run_mc_control(self, state):
-        for _ in range(10000):
+    def run_mc_control(self, state, episodes):
+        for _ in range(episodes):
             state_action_pairs, returns = self.first_visit_mc(state)
         
+            # policy evaluation
             for (s, a), rt in zip(state_action_pairs, returns):   
                 key = (tuple(s.state), a)
                 if key not in self.state_action_values:
@@ -35,7 +35,8 @@ class Agent:
                 self.state_action_values[key] = self.state_action_values[key] + (rt - self.state_action_values[key]) / self.state_action_count[key]
 
 
-        self.update_policy()
+            # policy improvement
+            self.update_policy()
 
         sorted_keys = sorted(
             self.state_action_values, 
@@ -56,17 +57,21 @@ class Agent:
         state_action_pairs, returns = [], []
         total_reward = 0
         while self.env.reward(state) == 0:
-            # get available actions & states
-            actions = list(self.env.get_action_set(state))
+            action_set = list(self.env.get_action_set(state)) # get available actions & states
             
-            if len(actions) != 0:  
-                # add state to policy if it doesn't exist
+            if len(action_set) != 0:  
+                # include state in policy mapping if it doesn't exist
+                # initialized with random policy
                 if tuple(state.state) not in self.policy:
-                    self.policy[tuple(state.state)] = [1 / len(actions)] * len(actions)
+                    self.policy[tuple(state.state)] = np.zeros(len(ACTIONS))
+                    self.policy[tuple(state.state)][action_set] = 1 / len(action_set)
+                    
+                wei = []
+                for a in action_set:
+                    wei.append(self.policy[tuple(state.state)][a])  
 
-                # take the action and transition to next state
-                action = random.choices(actions, weights=self.policy[tuple(state.state)], k=1)[0]
-
+                # select an action and transition to next state
+                action = random.choices(action_set, weights=wei, k=1)[0]
                 next_state = State()
                 next_state.state = state.state.copy()
                 next_state.state[action] = "X"
@@ -75,7 +80,6 @@ class Agent:
             reward = self.env.reward(next_state)
             total_reward += reward
             if (state, action) not in state_action_pairs:
-                # print(state.state, action, '\n')
                 state_action_pairs.append((state, action))
                 returns.append(reward)
             
@@ -83,48 +87,38 @@ class Agent:
                 state = next_state
                 break
 
-            # opponent policy: random
-            # randomly choose an action for the opponent to take
-            op_actions = self.env.get_action_set(next_state)
-            if op_actions:
-                op_action = random.choice(tuple(op_actions))
+            # opponent actions are selected via random policy
+            op_action_set = self.env.get_action_set(next_state)
+            if op_action_set:
+                op_action = random.choice(tuple(op_action_set))
                 next_state.state[op_action] = "O"
 
             state = next_state
-            reward = self.env.reward(next_state)
-            total_reward += reward
 
+            reward = self.env.reward(state)
+            total_reward += reward
             if reward == -10:
                 returns[-1] = LOSS
 
-        # state.show()
         for i in range(len(returns) - 1):
             returns[i] = total_reward - returns[i]
 
         return state_action_pairs, returns
 
     def update_policy(self):
-        # for each state, what action led to the maximial value?
         for s in self.policy:
             state = State()
             state.state = s
             actions = list(self.env.get_action_set(state))
 
+            # compute argmax
+            values = [self.state_action_values.get((s, a), 0.0) for a in actions]
+            idx = np.argmax(values)
 
-            idx = 0
-            max_value = -1
-            for i in range(len(actions)): # computing argmax
-                action_value = self.state_action_values.get((s, actions[i]), 0.0)
-                if action_value > max_value:
-                    max_value = action_value
-                    idx = i
-
+            # update via e-greedy policy
             prob = self.epsilon / len(actions)
-            for i in range(len(self.policy[s])):
-                if i == idx:
-                    self.policy[s][i] = 1 - self.epsilon + prob
-                else:
-                    self.policy[s][i] = prob
+            self.policy[s][:] = prob
+            self.policy[s][idx] = 1 - self.epsilon + prob
 
             
 
@@ -190,7 +184,8 @@ def main():
     state = State()
     agent = Agent(state, env)
 
-    agent.run_mc_control(state)
+    agent.run_mc_control(state, 1000)
+
 
 if __name__ == "__main__":
     main()
