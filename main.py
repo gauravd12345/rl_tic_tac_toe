@@ -21,18 +21,21 @@ class Agent:
         self.discounting_term = 1.0
 
     def run_mc_control(self, state):
-        for _ in range(1000):
+        for _ in range(10000):
             state_action_pairs, returns = self.first_visit_mc(state)
-
+        
             for (s, a), rt in zip(state_action_pairs, returns):   
-                if (s, a) not in self.state_action_values:
-                    self.state_action_values[(s, a)] = 0
-                    self.state_action_count[(s, a)] = 0
-                
+                key = (tuple(s.state), a)
+                if key not in self.state_action_values:
+                    self.state_action_values[key] = 0
+                    self.state_action_count[key] = 0
+    
 
-                self.state_action_count[(s, a)] += 1
-                self.state_action_values[(s, a)] = self.state_action_values[(s, a)] + (rt - self.state_action_values[(s, a)]) / self.state_action_count[(s, a)]
+                self.state_action_count[key] += 1
+                self.state_action_values[key] = self.state_action_values[key] + (rt - self.state_action_values[key]) / self.state_action_count[key]
 
+
+        self.update_policy()
 
         sorted_keys = sorted(
             self.state_action_values, 
@@ -41,10 +44,12 @@ class Agent:
         )
 
         i = 0
-        for (s, a) in sorted_keys:
+        for (s, a) in sorted_keys:  
             if i == 20:
                 break
-            print(f"State_Action: ({s.state}, {a}) | Value: {self.state_action_values[(s, a)]} | Count: {self.state_action_count[(s, a)]}")
+
+            key = (s, a)
+            print(f"State_Action: ({s}, {a}) | Value: {self.state_action_values[key]} | Count: {self.state_action_count[key]}")
             i += 1
 
     def first_visit_mc(self, state):
@@ -52,15 +57,15 @@ class Agent:
         total_reward = 0
         while self.env.reward(state) == 0:
             # get available actions & states
-            actions = self.env.get_action_set(state)
+            actions = list(self.env.get_action_set(state))
             
-            if len(actions) != 0:
+            if len(actions) != 0:  
                 # add state to policy if it doesn't exist
-                # if state not in self.policy:
-                #     self.policy[state] = random.choice(tuple(actions))
-                
+                if tuple(state.state) not in self.policy:
+                    self.policy[tuple(state.state)] = [1 / len(actions)] * len(actions)
+
                 # take the action and transition to next state
-                action = random.choice(tuple(actions))
+                action = random.choices(actions, weights=self.policy[tuple(state.state)], k=1)[0]
 
                 next_state = State()
                 next_state.state = state.state.copy()
@@ -98,9 +103,30 @@ class Agent:
 
         return state_action_pairs, returns
 
-    def epsilon_greedy_policy(self, action_value):
+    def update_policy(self):
         # for each state, what action led to the maximial value?
-        pass
+        for s in self.policy:
+            state = State()
+            state.state = s
+            actions = list(self.env.get_action_set(state))
+
+
+            idx = 0
+            max_value = -1
+            for i in range(len(actions)): # computing argmax
+                action_value = self.state_action_values.get((s, actions[i]), 0.0)
+                if action_value > max_value:
+                    max_value = action_value
+                    idx = i
+
+            prob = self.epsilon / len(actions)
+            for i in range(len(self.policy[s])):
+                if i == idx:
+                    self.policy[s][i] = 1 - self.epsilon + prob
+                else:
+                    self.policy[s][i] = prob
+
+            
 
 class Environment:
     def get_action_set(self, state):
