@@ -1,6 +1,9 @@
 import random
 import numpy as np
 
+
+EPISODES = 10000
+
 WIN = 10
 LOSS = -10
 DRAW = 1
@@ -97,8 +100,8 @@ class Agent:
 
             reward = self.env.reward(state)
             total_reward += reward
-            if reward == -10:
-                returns[-1] = LOSS
+            if reward != 0:
+                returns[-1] = reward
 
         for i in range(len(returns) - 1):
             returns[i] = total_reward - returns[i]
@@ -113,12 +116,121 @@ class Agent:
 
             # compute argmax
             values = [self.state_action_values.get((s, a), 0.0) for a in actions]
-            idx = np.argmax(values)
+            optimal_action = actions[int(np.argmax(values))]
 
             # update via e-greedy policy
             prob = self.epsilon / len(actions)
-            self.policy[s][:] = prob
-            self.policy[s][idx] = 1 - self.epsilon + prob
+            self.policy[s][:] = 0.0
+            for action in actions:
+                self.policy[s][action] = prob
+                
+            self.policy[s][optimal_action] = 1 - self.epsilon + prob
+
+    def choose_greedy_action(self, state):
+        action_set = list(self.env.get_action_set(state))
+
+        if len(action_set) == 0:
+            return None
+
+        state_key = tuple(state.state)
+
+        values = [
+            self.state_action_values.get((state_key, action), 0.0)
+            for action in action_set
+        ]
+
+        max_value = max(values)
+
+        best_actions = [
+            action
+            for action, value in zip(action_set, values)
+            if value == max_value
+        ]
+
+        return random.choice(best_actions)
+
+    def get_human_action(self, state):
+        action_set = self.env.get_action_set(state)
+
+        while True:
+            try:
+                action = int(input("Choose a square from 0 to 8: "))
+            except ValueError:
+                print("Please enter a valid integer.")
+                continue
+
+            if action not in ACTIONS:
+                print("The action must be between 0 and 8.")
+                continue
+
+            if action not in action_set:
+                print("That square is already occupied.")
+                continue
+
+            return action
+
+    def show_action_positions(self):
+        print("0 | 1 | 2")
+        print("--+---+--")
+        print("3 | 4 | 5")
+        print("--+---+--")
+        print("6 | 7 | 8")
+
+    def show_game_result(self, reward):
+        if reward == WIN:
+            print("The agent wins.")
+        elif reward == LOSS:
+            print("You win.")
+        elif reward == DRAW:
+            print("The game is a draw.")
+
+    def play_human_vs_agent(self):
+        while True:
+            state = State()
+
+            print("\nThe trained agent plays X.")
+            print("You play O.")
+            print("\nSquare positions:")
+            self.show_action_positions()
+
+            print("\nCurrent board:")
+            state.show()
+
+            while self.env.reward(state) == 0:
+                # Agent's turn
+                agent_action = self.choose_greedy_action(state)
+
+                if agent_action is None:
+                    break
+
+                state.state[agent_action] = "X"
+
+                print(f"\nAgent selected square {agent_action}:")
+                state.show()
+
+                reward = self.env.reward(state)
+
+                if reward != 0:
+                    self.show_game_result(reward)
+                    break
+
+                # Human's turn
+                human_action = self.get_human_action(state)
+                state.state[human_action] = "O"
+
+                print(f"\nYou selected square {human_action}:")
+                state.show()
+
+                reward = self.env.reward(state)
+
+                if reward != 0:
+                    self.show_game_result(reward)
+                    break
+
+            play_again = input("\nPlay again? (y/n): ").strip().lower()
+
+            if play_again != "y":
+                break
 
             
 
@@ -184,7 +296,8 @@ def main():
     state = State()
     agent = Agent(state, env)
 
-    agent.run_mc_control(state, 1000)
+    agent.run_mc_control(state, EPISODES)
+    agent.play_human_vs_agent()
 
 
 if __name__ == "__main__":
